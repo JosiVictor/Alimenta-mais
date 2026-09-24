@@ -1,0 +1,21 @@
+Nome,Tipo,UF,Site,lat,lon
+CEAGESP,Excedente,SP,https://www.ceagesp.gov.br,-23.5505,-46.6333
+CEASA Minas,Excedente,MG,https://www.ceasaminas.com.br,-19.9167,-43.9345
+CEASA Grande Rio,Excedente,RJ,,-22.9068,-43.1729
+CEASA-DF,Excedente,DF,,-15.7939,-47.8828
+CEASA-PR,Excedente,PR,,-25.4284,-49.2733
+CEASA-RS,Excedente,RS,,-30.0346,-51.2177
+CEASA-BA,Excedente,BA,,-12.9777,-38.5016
+CEASA-PE,Excedente,PE,,-8.0476,-34.877
+CEASA-CE,Excedente,CE,,-3.7172,-38.5433
+Mesa Brasil SESC-SP,Doação,SP,https://www.sesc.com.br/mesabrasil/,-23.5505,-46.6333
+Mesa Brasil SESC-RJ,Doação,RJ,https://www.sesc.com.br/mesabrasil/,-22.9068,-43.1729
+Mesa Brasil SESC-MG,Doação,MG,https://www.sesc.com.br/mesabrasil/,-19.9167,-43.9345
+Mesa Brasil SESC-DF,Doação,DF,https://www.sesc.com.br/mesabrasil/,-15.7939,-47.8828
+Mesa Brasil SESC-PR,Doação,PR,https://www.sesc.com.br/mesabrasil/,-25.4284,-49.2733
+Mesa Brasil SESC-RS,Doação,RS,https://www.sesc.com.br/mesabrasil/,-30.0346,-51.2177
+Mesa Brasil SESC-BA,Doação,BA,https://www.sesc.com.br/mesabrasil/,-12.9777,-38.5016
+Mesa Brasil SESC-PE,Doação,PE,https://www.sesc.com.br/mesabrasil/,-8.0476,-34.877
+Mesa Brasil SESC-CE,Doação,CE,https://www.sesc.com.br/mesabrasil/,-3.7172,-38.5433
+Mesa Brasil SESC-AM,Doação,AM,https://www.sesc.com.br/mesabrasil/,-3.119,-60.0217
+Mesa Brasil SESC-PA,Doação,PA,https://www.sesc.com.br/mesabrasil/,-1.4558,-48.5039
