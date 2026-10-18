@@ -13,8 +13,6 @@ uvicorn api.main:app --reload     # API em http://localhost:8000  (docs em /docs
 python -m scripts.coletar_dados   # coleta notícias e municípios de todos os estados
 ```
 
-Testes: `pip install -r requirements-dev.txt && python -m pytest`
-
 ## Páginas do app
 | Página | O que faz |
 |---|---|
@@ -49,10 +47,4 @@ alimenta/              módulos compartilhados (dados, coleta, llm_prep, config)
 scripts/               coleta em lote
 Data/                  CSVs usados pelo app e pela API
 Docs/                  Project Charter e Data Summary Report
-tests/                 testes automatizados
 ```
-
-## Observações
-- Os cadastros ficam em `Data/*.csv`. Em hospedagens com disco temporário (ex.: Streamlit Community Cloud) eles podem ser perdidos ao reiniciar.
-- Selenium não foi necessário: as fontes (API do IBGE e RSS) não têm conteúdo dinâmico. Ver `Docs/Project/project_charter.md`.
-- **Uso de IA:** partes do código e da documentação foram feitas com apoio do Claude (Anthropic) e revisadas pela autora.
