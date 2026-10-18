@@ -1,6 +1,6 @@
 # 🍽️ Alimenta+
 
-Aplicação que conecta alimentos que poderiam ser desperdiçados a pessoas e organizações que precisam deles (ODS 2, 12 e 17).
+Aplicação que conecta alimentos que são desperdiçados, com pessoas e organizações que precisam deles (ODS 2, 12 e 17).
 
 ## Como rodar
 
