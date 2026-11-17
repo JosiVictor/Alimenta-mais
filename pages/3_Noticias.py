@@ -1,7 +1,6 @@
-import requests
 import streamlit as st
 
-from alimenta import coleta, config, dados
+from alimenta import cliente_api, config
 
 st.set_page_config(page_title="Notícias | Alimenta+", page_icon="📰", layout="wide")
 st.title("📰 Notícias sobre alimentos")
@@ -10,13 +9,12 @@ uf = st.selectbox("Estado", sorted(config.ESTADOS), format_func=lambda s: f"{s} 
 
 if st.button("🔄 Buscar notícias agora"):
     try:
-        novas = coleta.buscar_noticias(uf)
-        qtd = dados.salvar_noticias(novas)
+        qtd = cliente_api.coletar_noticias(uf)
         st.success(f"{qtd} notícia(s) nova(s) salva(s) em Data/noticias.csv.")
-    except (requests.RequestException, ValueError):
-        st.warning("Não foi possível buscar as notícias agora. Mostrando as já salvas.")
+    except cliente_api.ApiErro as erro:
+        st.warning(f"{erro.detalhe} Mostrando as notícias já salvas.")
 
-noticias = dados.carregar_noticias(uf=uf)
+noticias = cliente_api.noticias(uf=uf)
 
 if noticias.empty:
     st.info("Nenhuma notícia salva para esse estado ainda. Clique em “Buscar notícias agora”.")

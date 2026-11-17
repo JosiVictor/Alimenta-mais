@@ -1,6 +1,6 @@
-"""Preparação dos dados para a etapa de LLMs (TP4): monta prompts e um corpus em JSONL.
+"""Preparação dos textos para o LLM: monta as conversas (prompts) de cada tarefa e o corpus em JSONL.
 
-Nenhuma chamada a LLM é feita aqui — apenas a preparação dos textos de entrada.
+Nenhuma chamada ao modelo é feita aqui; quem executa o modelo é `llm_local.py`.
 """
 import json
 
@@ -21,22 +21,29 @@ def contexto_organizacoes(orgs: pd.DataFrame) -> str:
     return "\n".join(linhas)
 
 
-def prompt_resumo(noticias: pd.DataFrame, estado: str) -> str:
-    titulos = "\n".join(f"- {t}" for t in noticias["Título"])
-    return (
-        "Você é um analista de segurança alimentar. Com base apenas nas manchetes abaixo, "
-        f"escreva um resumo de até 5 linhas sobre desperdício e doação de alimentos em {estado}, "
-        "destacando oportunidades de doação.\n\n"
-        f"Manchetes:\n{titulos or '(nenhuma notícia coletada)'}"
-    )
+TAREFAS = ("resumo", "pergunta_resposta")
+
+_SISTEMA = "Você é um assistente que escreve em português do Brasil, de forma clara e objetiva."
 
 
-def prompt_perguntas_respostas(pergunta: str, orgs: pd.DataFrame) -> str:
-    return (
-        "Responda à pergunta usando somente as organizações listadas. "
-        "Se a informação não estiver na lista, diga que não sabe.\n\n"
-        f"Organizações:\n{contexto_organizacoes(orgs)}\n\nPergunta: {pergunta}"
-    )
+def mensagens(tarefa: str, texto: str, pergunta: str | None = None) -> list[dict]:
+    """Monta a conversa enviada ao modelo para cada tarefa."""
+    if tarefa == "resumo":
+        pedido = (
+            "Resuma em até 3 frases, usando somente o texto abaixo, o que ele diz sobre "
+            f"desperdício e doação de alimentos.\n\nTexto:\n{texto}"
+        )
+    elif tarefa == "pergunta_resposta":
+        if not (pergunta or "").strip():
+            raise ValueError("Informe a pergunta para a tarefa de perguntas e respostas.")
+        pedido = (
+            "Responda à pergunta usando somente as informações do texto. "
+            "Se a resposta não estiver no texto, diga que não sabe.\n\n"
+            f"Texto:\n{texto}\n\nPergunta: {pergunta.strip()}"
+        )
+    else:
+        raise ValueError(f"Tarefa desconhecida: '{tarefa}'. Use {' ou '.join(TAREFAS)}.")
+    return [{"role": "system", "content": _SISTEMA}, {"role": "user", "content": pedido}]
 
 
 def corpus_jsonl(orgs: pd.DataFrame, noticias: pd.DataFrame) -> str:

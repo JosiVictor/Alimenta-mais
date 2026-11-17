@@ -17,9 +17,17 @@
   - `organizacoes_alimenta_mais.csv`: 17 organizações (tipo *Doação* ou *Excedente*)
   - `pontos_alimenta_mais.csv`: 20 pontos com coordenadas, para o mapa
   - `noticias.csv`: notícias coletadas por estado
-  - `municipios_por_uf.csv`: municípios por estado (gerado pelo script de coleta)
+  - `municipios_por_uf.csv`: municípios por estado. Esse arquivo **não vem no repositório**: é criado ao rodar `python -m scripts.coletar_dados`.
 
-## 3. Cuidados
+## 3. Evolução da coleta (TP2 → TP3)
+
+| IBGE | Quantidade de municípios do estado | Lista de municípios com mesorregião e microrregião, e ranking por mesorregião |
+| Notícias | Manchetes do estado mostradas no app | Notícias salvas em CSV, com estado, fonte, data e link, sem repetição |
+| Organizações | Cadastro e importação de CSV no app | Mesmo cadastro, agora gravado pela API e validado (tipo, UF e repetidas) |
+| Coleta em lote | Não havia | Script que coleta os 11 estados de uma vez |
+| Acesso aos dados | O app lia os dados direto | O app lê e grava tudo pela API |
+
+## 4. Cuidados
 - Utilizar fontes públicas e confiáveis.
 - Evitar dados pessoais.
 - Verificar a atualização dos dados.
@@ -28,5 +36,5 @@
 - As coordenadas do mapa são aproximadas (capital de cada estado), e a veracidade das notícias não é verificada.
 - O projeto cobre 11 estados, apenas parte do país.
 
-## 4. Uso previsto com LLMs
-As manchetes e as descrições das organizações serão usadas no resumo de notícias e em perguntas e respostas sobre onde doar.
+## 5. Uso com LLM (TP4)
+As manchetes e as descrições das organizações são enviadas, como texto, ao modelo local para o **resumo de notícias** e para **perguntas e respostas** sobre onde doar. Nada é enviado para a nuvem e os textos e respostas não são salvos. A página *API e LLM* também gera o corpus em JSONL com esses dados. O modelo escolhido está em `Docs/LLM/escolha_do_modelo.md`.

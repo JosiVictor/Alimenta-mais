@@ -1,8 +1,7 @@
 import pandas as pd
-import requests
 import streamlit as st
 
-from alimenta import coleta, config, dados
+from alimenta import cliente_api, config
 
 st.set_page_config(page_title="Dados IBGE | Alimenta+", page_icon="📊", layout="wide")
 st.title("📊 Dados IBGE")
@@ -10,7 +9,7 @@ st.title("📊 Dados IBGE")
 
 @st.cache_data(ttl=24 * 3600, show_spinner="Consultando o IBGE...")
 def municipios_do_estado(uf: str) -> pd.DataFrame:
-    return coleta.resumir_municipios(coleta.buscar_municipios(uf))
+    return cliente_api.municipios(uf)
 
 
 def ranking_mesorregioes(municipios: pd.DataFrame) -> pd.DataFrame:
@@ -21,7 +20,7 @@ def ranking_mesorregioes(municipios: pd.DataFrame) -> pd.DataFrame:
 
 uf = st.selectbox("Estado", sorted(config.ESTADOS), format_func=lambda s: f"{s} - {config.ESTADOS[s]}")
 nome_estado = config.ESTADOS[uf]
-orgs = dados.filtrar_organizacoes(dados.carregar_organizacoes(), uf=uf)
+orgs = cliente_api.organizacoes(uf=uf)
 
 try:
     municipios = municipios_do_estado(uf)
@@ -66,21 +65,20 @@ try:
             "de uma mesma parte do estado. É uma divisão mais antiga: o IBGE hoje também usa as *regiões "
             "geográficas intermediárias*, mas as mesorregiões ainda aparecem em muitas bases.\n"
             "- **Fonte:** API de Localidades do IBGE, consultada ao abrir esta página (o resultado fica em cache por 24 horas).\n"
+            "- **Atenção:** a tabela conta municípios, não habitantes. Uma mesorregião com muitos municípios "
+            "pode ter pouca população; o cruzamento com população e vulnerabilidade (IBGE-SIDRA) é uma etapa futura."
         )
     with st.expander("Ver lista completa de municípios"):
         st.dataframe(municipios, hide_index=True, use_container_width=True)
-except (requests.RequestException, ValueError):
-    guardado = dados.carregar_municipios_por_uf()
-    linha = guardado[guardado["UF"] == uf]
-    st.warning("Não foi possível consultar o IBGE agora.")
-    if not linha.empty:
-        st.metric("Municípios (último valor salvo)", linha.iloc[0]["Municípios"])
+except cliente_api.ApiErro as erro:
+    st.warning(erro.detalhe)
 
 st.divider()
 st.subheader("Panorama da base por estado")
-base = dados.carregar_organizacoes()
+base = cliente_api.organizacoes()
 base = base[base["UF"] != config.NACIONAL]
 if base.empty:
     st.info("Sem organizações estaduais cadastradas.")
 else:
     st.bar_chart(base.groupby(["UF", "Tipo"]).size().unstack(fill_value=0))
+    st.caption("Quantidade de organizações por estado e tipo (exclui as de atuação nacional).")

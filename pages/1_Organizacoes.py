@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 
-from alimenta import config, dados
+from alimenta import cliente_api, config
 
 st.set_page_config(page_title="Organizações | Alimenta+", page_icon="🤝", layout="wide")
 st.title("🤝 Organizações")
@@ -9,13 +9,13 @@ st.title("🤝 Organizações")
 if "aviso" in st.session_state:
     st.success(st.session_state.pop("aviso"))
 
-df = dados.carregar_organizacoes()
+df = cliente_api.organizacoes()
 
 col_uf, col_tipo = st.columns(2)
 uf = col_uf.selectbox("Estado", ["Todos"] + sorted(config.ESTADOS))
 tipos = col_tipo.multiselect("Mostrar", config.TIPOS, default=config.TIPOS)
 
-resultado = dados.filtrar_organizacoes(df, uf=None if uf == "Todos" else uf, tipos=tipos)
+resultado = cliente_api.organizacoes(uf=None if uf == "Todos" else uf, tipos=tipos)
 
 if resultado.empty:
     st.info("Nenhuma organização encontrada.")
@@ -48,9 +48,9 @@ with aba_form:
         enviar = st.form_submit_button("Adicionar")
     if enviar:
         try:
-            dados.adicionar_organizacao(nome, tipo, estado, ajuda, site)
-        except ValueError as erro:
-            st.error(str(erro))
+            cliente_api.criar_organizacao(nome, tipo, estado, ajuda, site)
+        except cliente_api.ApiErro as erro:
+            st.error(erro.detalhe)
         else:
             st.session_state["aviso"] = f"'{nome.strip()}' foi adicionada e salva na base."
             st.rerun()
@@ -61,7 +61,7 @@ with aba_csv:
     if arquivo and st.button("Importar"):
         try:
             novas = pd.read_csv(arquivo, dtype=str, encoding="utf-8-sig")
-            adicionadas, ignoradas = dados.adicionar_varias(novas)
+            adicionadas, ignoradas = cliente_api.importar_organizacoes(novas)
         except (ValueError, pd.errors.ParserError, UnicodeDecodeError) as erro:
             st.error(f"Não foi possível importar: {erro}")
         else:

@@ -3,20 +3,31 @@
 Como rodar:  uvicorn api.main:app --reload
 Documentação interativa: http://localhost:8000/docs
 """
+import asyncio
+import logging
+import os
+import time
 from typing import Literal
 
+import requests
 from fastapi import FastAPI, HTTPException, Query, status
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from alimenta import config, dados
+from alimenta import coleta, config, dados, llm_local, llm_prep
 
 app = FastAPI(
     title="API Alimenta+",
     description="Consulta e cadastro de organizações de doação e centrais de excedente de alimentos.",
-    version="1.0.0",
+    version="1.2.0",
 )
 
 Tipo = Literal["Doação", "Excedente"]
+Tarefa = Literal["resumo", "pergunta_resposta"]
+
+logger = logging.getLogger("alimenta.api")
+
+# Tempo máximo (em segundos) esperando o modelo local responder.
+TIMEOUT_LLM = float(os.getenv("ALIMENTA_TIMEOUT_LLM", "180"))
 
 
 class OrganizacaoIn(BaseModel):
@@ -56,6 +67,25 @@ class Noticia(BaseModel):
     fonte: str
     data: str
     link: str
+
+
+class Municipio(BaseModel):
+    municipio: str
+    mesorregiao: str
+    microrregiao: str
+
+
+class ResultadoColeta(BaseModel):
+    uf: str
+    novas: int
+
+
+def _validar_uf_estado(uf: str) -> str:
+    """Aceita só estados do projeto (sem 'Nacional')."""
+    uf = _validar_uf_consulta(uf)
+    if uf == config.NACIONAL:
+        raise HTTPException(status_code=422, detail="Informe a sigla de um estado.")
+    return uf
 
 
 def _validar_uf_consulta(uf: str | None) -> str | None:
@@ -109,8 +139,123 @@ def listar_pontos(uf: str | None = None, tipo: Tipo | None = None) -> list[dict]
 
 @app.get("/noticias", response_model=list[Noticia], tags=["Notícias"],
          summary="Lista notícias já coletadas")
-def listar_noticias(uf: str | None = None, limite: int = Query(default=10, ge=1, le=100)) -> list[dict]:
+def listar_noticias(uf: str | None = None, limite: int = Query(default=10, ge=1, le=1000)) -> list[dict]:
     uf = _validar_uf_consulta(uf)
     df = dados.carregar_noticias(uf=uf, limite=limite)
     df = df.rename(columns={"Título": "titulo", "Fonte": "fonte", "Data": "data", "Link": "link", "UF": "uf"})
     return df.to_dict(orient="records")
+
+
+@app.post("/noticias/coletar", response_model=ResultadoColeta, tags=["Notícias"],
+          summary="Busca notícias novas de um estado e salva no CSV")
+def coletar_noticias(
+    uf: str = Query(description="Sigla do estado (ex.: SP)."),
+    limite: int = Query(default=8, ge=1, le=30),
+) -> dict:
+    uf = _validar_uf_estado(uf)
+    try:
+        novas = coleta.buscar_noticias(uf, limite=limite)
+    except requests.RequestException as erro:
+        raise HTTPException(status_code=502, detail="Não foi possível buscar as notícias agora.") from erro
+    return {"uf": uf, "novas": dados.salvar_noticias(novas)}
+
+
+@app.get("/municipios/{uf}", response_model=list[Municipio], tags=["IBGE"],
+         summary="Municípios do estado, com mesorregião e microrregião (API do IBGE)")
+def listar_municipios(uf: str) -> list[dict]:
+    uf = _validar_uf_estado(uf)
+    try:
+        brutos = coleta.buscar_municipios(uf)
+    except requests.RequestException as erro:
+        raise HTTPException(status_code=502, detail="Não foi possível consultar o IBGE agora.") from erro
+    tabela = coleta.resumir_municipios(brutos)
+    tabela = tabela.rename(columns={"Município": "municipio", "Mesorregião": "mesorregiao", "Microrregião": "microrregiao"})
+    return tabela.to_dict(orient="records")
+
+class EntradaTexto(BaseModel):
+    texto: str = Field(min_length=10, max_length=6000, description="Texto a ser processado pelo modelo.",
+                       examples=["- Banco de alimentos recebe 20 toneladas de doações\n- Feira reduz desperdício"])
+    tarefa: Tarefa = Field(default="resumo", description="'resumo' ou 'pergunta_resposta'.")
+    pergunta: str | None = Field(default=None, max_length=300, description="Obrigatória na tarefa 'pergunta_resposta'.")
+    max_novos_tokens: int = Field(default=150, ge=20, le=300, description="Tamanho máximo da resposta.")
+
+    @model_validator(mode="after")
+    def exigir_pergunta(self):
+        if self.tarefa == "pergunta_resposta" and not (self.pergunta or "").strip():
+            raise ValueError("Informe a pergunta na tarefa 'pergunta_resposta'.")
+        return self
+
+
+class ResultadoTexto(BaseModel):
+    tipo_analise: Tarefa = Field(description="Tarefa realizada pelo modelo.")
+    texto_processado: str = Field(description="Texto que foi enviado ao modelo.")
+    pergunta: str | None = Field(default=None, description="Pergunta feita (só em 'pergunta_resposta').")
+    resultado: str = Field(description="Resposta gerada pelo modelo.")
+    modelo: str = Field(description="Nome do modelo usado.")
+    tempo_segundos: float = Field(description="Tempo gasto para gerar a resposta.")
+
+
+class StatusModelo(BaseModel):
+    modelo: str
+    carregado: bool = Field(description="True se o modelo já está na memória.")
+
+
+class ErroResposta(BaseModel):
+    detail: str
+
+
+ERROS_LLM = {
+    422: {"model": ErroResposta, "description": "Texto ou pergunta inválidos."},
+    500: {"model": ErroResposta, "description": "Erro inesperado ao gerar a resposta."},
+    502: {"model": ErroResposta, "description": "O modelo não devolveu resposta."},
+    503: {"model": ErroResposta, "description": "Modelo indisponível (não instalado, não carregou ou sem memória)."},
+    504: {"model": ErroResposta, "description": "O modelo demorou demais para responder."},
+}
+
+
+@app.get("/modelo", response_model=StatusModelo, tags=["LLM"], summary="Mostra qual modelo local está configurado")
+def status_modelo() -> dict:
+    return llm_local.status()
+
+
+@app.post("/modelo/carregar", response_model=StatusModelo, tags=["LLM"],
+          responses={503: ERROS_LLM[503]}, summary="Carrega o modelo na memória (baixa na primeira vez)")
+async def carregar_modelo() -> dict:
+    try:
+        await asyncio.to_thread(llm_local.carregar)
+    except llm_local.ModeloIndisponivel as erro:
+        raise HTTPException(status_code=503, detail=str(erro)) from erro
+    return llm_local.status()
+
+
+@app.post("/processar_texto", response_model=ResultadoTexto, tags=["LLM"], responses=ERROS_LLM,
+          summary="Resume um texto ou responde uma pergunta usando o modelo local")
+async def processar_texto(entrada: EntradaTexto) -> dict:
+    mensagens = llm_prep.mensagens(entrada.tarefa, entrada.texto, entrada.pergunta)
+    inicio = time.perf_counter()
+    try:
+        resposta = await asyncio.wait_for(
+            asyncio.to_thread(llm_local.gerar, mensagens, entrada.max_novos_tokens), timeout=TIMEOUT_LLM
+        )
+    except llm_local.ModeloIndisponivel as erro:
+        raise HTTPException(status_code=503, detail=str(erro)) from erro
+    except asyncio.TimeoutError as erro:
+        raise HTTPException(
+            status_code=504,
+            detail=f"O modelo demorou mais de {TIMEOUT_LLM:.0f} segundos. Tente um texto menor ou uma resposta mais curta.",
+        ) from erro
+    except Exception as erro:
+        logger.exception("Erro inesperado no modelo local")
+        raise HTTPException(status_code=500, detail="Erro inesperado ao gerar a resposta.") from erro
+
+    if not resposta.strip():
+        raise HTTPException(status_code=502, detail="O modelo não devolveu nenhuma resposta. Tente reformular o texto.")
+
+    return {
+        "tipo_analise": entrada.tarefa,
+        "texto_processado": entrada.texto,
+        "pergunta": entrada.pergunta,
+        "resultado": resposta.strip(),
+        "modelo": llm_local.nome_modelo(),
+        "tempo_segundos": round(time.perf_counter() - inicio, 2),
+    }

@@ -22,7 +22,6 @@ def _salvar_csv(df: pd.DataFrame, arquivo: str) -> None:
     temporario.replace(caminho)
 
 
-# ---------------------------------------------------------------- organizações
 def carregar_organizacoes() -> pd.DataFrame:
     return _ler_csv(config.ARQ_ORGANIZACOES, config.COLUNAS_ORGANIZACOES)
 
@@ -99,8 +98,6 @@ def filtrar_organizacoes(df: pd.DataFrame, uf: str | None = None, tipos: list[st
         df = df[mascara]
     return df.reset_index(drop=True)
 
-
-# ---------------------------------------------------------------------- pontos
 def carregar_pontos() -> pd.DataFrame:
     df = _ler_csv(config.ARQ_PONTOS, config.COLUNAS_PONTOS)
     df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
@@ -116,7 +113,6 @@ def filtrar_pontos(df: pd.DataFrame, uf: str | None = None, tipos: list[str] | N
     return df.reset_index(drop=True)
 
 
-# -------------------------------------------------------------------- notícias
 def carregar_noticias(uf: str | None = None, limite: int | None = None) -> pd.DataFrame:
     df = _ler_csv(config.ARQ_NOTICIAS, config.COLUNAS_NOTICIAS)
     if uf:
@@ -134,11 +130,6 @@ def salvar_noticias(novas: pd.DataFrame) -> int:
     total = pd.concat([inéditas[config.COLUNAS_NOTICIAS], atuais], ignore_index=True)
     _salvar_csv(total, config.ARQ_NOTICIAS)
     return len(inéditas)
-
-
-# ----------------------------------------------------------- municípios por UF
-def carregar_municipios_por_uf() -> pd.DataFrame:
-    return _ler_csv(config.ARQ_MUNICIPIOS_UF, config.COLUNAS_MUNICIPIOS_UF)
 
 
 def salvar_municipios_por_uf(df: pd.DataFrame) -> None:

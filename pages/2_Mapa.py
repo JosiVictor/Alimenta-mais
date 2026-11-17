@@ -1,18 +1,16 @@
 import streamlit as st
 
-from alimenta import config, dados
+from alimenta import cliente_api, config
 
 st.set_page_config(page_title="Mapa | Alimenta+", page_icon="🗺️", layout="wide")
 st.title("🗺️ Mapa de pontos")
 st.write("Centrais de abastecimento (**excedente**) e pontos de **doação** cadastrados com coordenadas.")
 
-pontos = dados.carregar_pontos()
-
 col_uf, col_tipo = st.columns(2)
 uf = col_uf.selectbox("Estado", ["Todos"] + sorted(config.ESTADOS))
 tipos = col_tipo.multiselect("Mostrar", config.TIPOS, default=config.TIPOS)
 
-filtrados = dados.filtrar_pontos(pontos, uf=None if uf == "Todos" else uf, tipos=tipos)
+filtrados = cliente_api.pontos(uf=None if uf == "Todos" else uf, tipos=tipos)
 
 if filtrados.empty:
     st.info("Nenhum ponto encontrado para esse filtro.")
