@@ -78,4 +78,4 @@ Docs/                  Project Charter, Data Summary Report e escolha do modelo 
 ## Observações
 - Os cadastros ficam em `Data/*.csv`. Em hospedagens com disco temporário (ex.: Streamlit Community Cloud) eles podem ser perdidos ao reiniciar.
 - Selenium não foi necessário: as fontes (API do IBGE e RSS) não têm conteúdo dinâmico. Ver `Docs/Project/project_charter.md`.
-- **Uso de IA:** foi utilizado o Claude (Anthropic) como apoio no código, na documentação e na correção de erros, com revisão e testes da autora. O modelo usado dentro do app é o Qwen2.5-0.5B-Instruct (Qwen Team, Alibaba).
+- **Uso de IA:** foi utilizado o Claude como apoio no código, na documentação e na correção de erros, com revisão e testes da autora. O modelo usado dentro do app é o Qwen2.5-0.5B-Instruct.
