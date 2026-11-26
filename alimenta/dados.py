@@ -134,3 +134,22 @@ def salvar_noticias(novas: pd.DataFrame) -> int:
 
 def salvar_municipios_por_uf(df: pd.DataFrame) -> None:
     _salvar_csv(df[config.COLUNAS_MUNICIPIOS_UF], config.ARQ_MUNICIPIOS_UF)
+
+
+# --------------------------------------------------------------------- resumos
+def carregar_resumos(uf: str | None = None, limite: int | None = None) -> pd.DataFrame:
+    """Resumos gerados pelo modelo, do mais novo para o mais antigo."""
+    df = _ler_csv(config.ARQ_RESUMOS, config.COLUNAS_RESUMOS).iloc[::-1]
+    if uf:
+        df = df[df["UF"] == uf]
+    if limite:
+        df = df.head(limite)
+    return df.reset_index(drop=True)
+
+
+def salvar_resumo(uf: str, estilo: str, resumo: str, modelo: str, noticias: int, gerado_em: str, tempo: float) -> None:
+    atuais = _ler_csv(config.ARQ_RESUMOS, config.COLUNAS_RESUMOS)
+    novo = pd.DataFrame(
+        [[uf, estilo, resumo, modelo, str(noticias), gerado_em, str(tempo)]], columns=config.COLUNAS_RESUMOS
+    )
+    _salvar_csv(pd.concat([atuais, novo], ignore_index=True), config.ARQ_RESUMOS)

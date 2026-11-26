@@ -23,16 +23,25 @@ def contexto_organizacoes(orgs: pd.DataFrame) -> str:
 
 TAREFAS = ("resumo", "pergunta_resposta")
 
+# Três jeitos de pedir o mesmo resumo (engenharia de prompts): muda o público e o formato da resposta.
+ESTILOS = {
+    "padrao": "Resuma em até 3 frases o que o texto diz sobre desperdício e doação de alimentos.",
+    "gestor": (
+        "Escreva, em até 3 frases e para um gestor público, um resumo do texto destacando "
+        "o que pode ser feito para reduzir o desperdício ou ampliar as doações de alimentos."
+    ),
+    "topicos": "Liste de 3 a 5 tópicos curtos com os principais fatos do texto, um por linha, começando cada linha com '- '.",
+}
+
 _SISTEMA = "Você é um assistente que escreve em português do Brasil, de forma clara e objetiva."
 
 
-def mensagens(tarefa: str, texto: str, pergunta: str | None = None) -> list[dict]:
+def mensagens(tarefa: str, texto: str, pergunta: str | None = None, estilo: str = "padrao") -> list[dict]:
     """Monta a conversa enviada ao modelo para cada tarefa."""
     if tarefa == "resumo":
-        pedido = (
-            "Resuma em até 3 frases, usando somente o texto abaixo, o que ele diz sobre "
-            f"desperdício e doação de alimentos.\n\nTexto:\n{texto}"
-        )
+        if estilo not in ESTILOS:
+            raise ValueError(f"Estilo desconhecido: '{estilo}'. Use {', '.join(ESTILOS)}.")
+        pedido = f"{ESTILOS[estilo]} Use somente o texto abaixo e não invente informações.\n\nTexto:\n{texto}"
     elif tarefa == "pergunta_resposta":
         if not (pergunta or "").strip():
             raise ValueError("Informe a pergunta para a tarefa de perguntas e respostas.")

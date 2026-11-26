@@ -1,86 +1,89 @@
-# Modelo de linguagem local — escolha e integração (TP4)
+# Modelo de linguagem local — escolha e integração
 
-## 1. O que foi feito
-O Alimenta+ agora tem um modelo de linguagem que roda **no próprio computador**, sem enviar dados para a nuvem. Ele é usado para duas tarefas:
+## 1. O que o modelo faz no projeto
+O Alimenta+ usa um modelo de linguagem que roda **no próprio computador**, sem enviar dados para a nuvem:
 
-- **Resumo de notícias:** resume as manchetes salvas de um estado.
-- **Perguntas e respostas:** responde perguntas (ex.: "Onde posso doar alimentos em MG?") usando a lista de organizações como base.
+- **Sumarização (foco do TP5):** resume as manchetes salvas de um estado, em três estilos (padrão, para o gestor público e em tópicos).
+- **Perguntas e respostas:** responde sobre as organizações cadastradas, usando só a lista do app.
 
-## 2. Modelo escolhido
-**`Qwen/Qwen2.5-0.5B-Instruct`** (HuggingFace), da família Qwen2.5.
+## 2. Critérios e comparação
+Critérios: **desempenho** (fala português, segue instruções e faz as duas tarefas), **custo local** (cabe em 8 GB de memória, sem placa de vídeo) e **acessibilidade** (baixa pela biblioteca `transformers`, sem cadastro e com licença livre).
 
-```bash
-set ALIMENTA_MODELO=Qwen/Qwen2.5-1.5B-Instruct        # Windows (cmd)
-$env:ALIMENTA_MODELO = "Qwen/Qwen2.5-1.5B-Instruct"    # Windows (PowerShell)
-export ALIMENTA_MODELO=Qwen/Qwen2.5-1.5B-Instruct      # Linux / Mac
+A avaliação vem das fichas dos modelos no HuggingFace. **Só o Qwen2.5-0.5B foi testado no projeto**; os outros foram analisados, não executados.
+
+| Modelo | Português | Memória (estimativa) | Acesso e licença | Avaliação |
+|---|---|---|---|---|
+| **Qwen2.5-0.5B-Instruct** (0,49 bi) | Sim | 1 a 2 GB | Sem cadastro, Apache 2.0 | Cabe no computador e faz as duas tarefas, mas erra mais por ser pequeno. |
+| Qwen2.5-1.5B-Instruct (1,5 bi) | Sim | 3 GB ou mais | Sem cadastro, Apache 2.0 | Responde melhor, mas é arriscado com 8 GB. |
+| Llama 3.2 1B-Instruct (1,23 bi) | Sim | 3 a 5 GB | **Exige cadastro e aceite da licença da Meta** | Provavelmente melhor, mas o acesso restrito complica a execução por quem corrigir. |
+| SmolLM2-360M-Instruct (0,36 bi) | Fraco | cerca de 0,7 GB | Sem cadastro, Apache 2.0 | Mais leve, mas pior em português. |
+| Modelo só de resumo  | Varia | Varia | Em geral sem cadastro | Bom em resumo, mas não faz perguntas e respostas. |
+
+**Decisão:** Qwen2.5-0.5B-Instruct, o único que reúne português, as duas tarefas, acesso sem cadastro e memória compatível. Para trocar por um modelo maior, sem mexer no código:
+
+```powershell
+$env:ALIMENTA_MODELO = "Qwen/Qwen2.5-1.5B-Instruct"     # Windows (PowerShell)
+export ALIMENTA_MODELO=Qwen/Qwen2.5-1.5B-Instruct       # Linux / Mac
 ```
 
-**Por que um modelo de uso geral?** Modelos específicos de resumo ou de perguntas e respostas costumam ser bons em uma tarefa só. Com um modelo "instruct" as duas tarefas usam o mesmo modelo, só trocando o pedido, o que mantém o projeto simples.
+## 3. Hardware
+O modelo roda na **CPU** (sem GPU). Precisa de 3 a 4 GB de memória livre (contando Python, `torch` e o app) e cerca de 1 GB de disco. O primeiro download (cerca de 988 MB) levou vários minutos. Tempos e memória medidos no computador do projeto estão em [`medicoes.md`](medicoes.md), gerado por `python -m scripts.medir_modelo`, junto de exemplos reais da API (sucesso e erros 422, 503 e 504).
 
-**Como reduzir os erros de um modelo pequeno:**
-- o pedido manda usar **somente o texto fornecido** e dizer "não sei" quando a resposta não estiver nele;
-- a geração é **determinística** (`do_sample=False`): o mesmo texto gera a mesma resposta;
-- a resposta é curta (limite de tokens), o que reduz o espaço para inventar.
+## 4. Como a integração funciona
+```
+Streamlit (Painel / Assistente com IA)
+        │  pede à API
+        ▼
+FastAPI  POST /resumos/gerar  ou  POST /processar_texto     ← valida a entrada (Response Models)
+        │
+        ▼
+alimenta/llm_prep.py   monta o prompt do estilo escolhido
+        │
+        ▼
+alimenta/llm_local.py  carrega o modelo (1ª vez) e gera a resposta com Transformers
+```
+O modelo é baixado na primeira vez, fica no cache e é carregado na primeira chamada. `torch` e `transformers` só são carregados quando o modelo é usado, então a API sobe mesmo sem eles.
 
-## 3. Como a integração funciona
-
-### Rotas
 | Método | Rota | Função |
 |---|---|---|
-| POST | `/processar_texto` | Resume um texto ou responde uma pergunta |
+| POST | `/resumos/gerar` | Resume as notícias salvas de um estado e guarda o resultado |
+| GET | `/resumos` | Lista os resumos gerados |
+| POST | `/processar_texto` | Resume um texto qualquer ou responde uma pergunta |
 | GET | `/modelo` | Mostra o modelo configurado e se já está carregado |
 | POST | `/modelo/carregar` | Carrega o modelo antes do primeiro uso |
 
-**Entrada de `/processar_texto`:**
-```json
-{
-  "texto": "- Banco de alimentos recebe 20 toneladas de doações\n- Feira reduz o desperdício",
-  "tarefa": "resumo",
-  "pergunta": null,
-  "max_novos_tokens": 150
-}
-```
-`tarefa` pode ser `resumo` ou `pergunta_resposta` (nesta, `pergunta` é obrigatória). O texto precisa ter de 10 a 6000 caracteres.
 
-**Saída (Response Model `ResultadoTexto`):**
-```json
-{
-  "tipo_analise": "resumo",
-  "texto_processado": "- Banco de alimentos recebe 20 toneladas...",
-  "pergunta": null,
-  "resultado": "…resposta gerada pelo modelo…",
-  "modelo": "Qwen/Qwen2.5-0.5B-Instruct",
-  "tempo_segundos": 12.4
-}
-```
+## 5. Engenharia de prompts (sumarização)
+O mesmo texto é pedido de três jeitos (`alimenta/llm_prep.py`):
 
-## 4. Tratamento de erros
-| Código | Quando acontece | O que a API responde |
-|---|---|---|
-| 422 | Texto muito curto/longo, tarefa inválida, pergunta ausente | Mensagem dizendo qual campo está errado |
-| 503 | `torch`/`transformers` não instalados, falha ao baixar/carregar o modelo, falta de memória | Mensagem explicando o problema |
-| 504 | O modelo demorou mais que o limite (180 s, ajustável em `ALIMENTA_TIMEOUT_LLM`) | Sugere um texto menor ou resposta mais curta |
-| 502 | O modelo não devolveu nenhuma resposta | Pede para reformular o texto |
-| 500 | Erro inesperado | Mensagem genérica (o detalhe fica só no log, para não expor informações internas) |
+| Estilo | Pedido ao modelo |
+|---|---|
+| `padrao` | Resumir em até 3 frases o que o texto diz sobre desperdício e doação de alimentos |
+| `gestor` | Resumir em até 3 frases para um gestor público, destacando o que pode reduzir o desperdício ou ampliar doações |
+| `topicos` | Listar de 3 a 5 tópicos curtos com os principais fatos |
 
-No app, o erro aparece em vermelho com o código e a mensagem. Se a API estiver desligada, o app avisa como ligá-la.
+## 6. Tratamento de erros
+| Código | Quando acontece |
+|---|---|
+| 404 | `/resumos/gerar` em um estado sem notícias salvas (pede para coletar antes) |
+| 422 | Entrada inválida: texto muito curto ou longo, tarefa, estilo ou estado inválidos, pergunta ausente |
+| 502 | O modelo não devolveu resposta (pede para reformular o texto) |
+| 503 | `torch`/`transformers` ausentes, falha ao baixar ou carregar o modelo, falta de memória |
+| 504 | O modelo passou do limite de 180 s (ajustável em `ALIMENTA_TIMEOUT_LLM`) |
+| 500 | Erro inesperado (o detalhe fica só no log) |
 
-## 5. Como testar
+## 7. Como testar
 ```bash
 pip install -r requirements.txt
-uvicorn api.main:app --reload                 
-streamlit run app.py                          
+python -m uvicorn api.main:app --reload       # 1º terminal
+python -m streamlit run app.py                # 2º terminal
 ```
-1. Abra `http://localhost:8000/docs`, escolha `POST /processar_texto` e clique em *Try it out*.
-2. Ou use o app: menu **API e LLM → Assistente com LLM local → Gerar com o modelo local**.
-3. A primeira execução baixa o modelo (cerca de 1 GB) e pode demorar vários minutos.
+No menu **Painel**, escolha um estado e um estilo e clique em **Gerar resumo com o modelo local**. Também dá para testar `POST /resumos/gerar` e `POST /processar_texto` em `http://localhost:8000/docs`. A primeira execução baixa o modelo (cerca de 1 GB).
 
-Para ver os erros: envie um texto de poucas letras (422); ou rode a API sem `torch` instalado (503).
+## 8. Limitações
+- Modelos pequenos podem errar ou inventar informações; os resumos devem ser conferidos antes de serem usados em decisões.
+- O resumo usa só as manchetes, não o texto completo das notícias.
+- Sem placa de vídeo a geração é lenta, e só uma resposta é gerada por vez.
 
-## 6. Limitações
-- Modelos pequenos podem errar ou inventar informações; o resultado deve ser conferido antes de ser usado em decisões.
-- Sem placa de vídeo, a geração é lenta; só uma resposta é gerada por vez.
-- O modelo não guarda nada: texto e respostas não são salvos.
-
-## 7. Uso de IA
-O código e esta documentação foram feitos com apoio do Claude (Anthropic) e revisados pela autora do projeto. O modelo de linguagem usado dentro do app é o Qwen2.5-0.5B-Instruct (Qwen Team, Alibaba).
+## 9. Uso de IA
+O código e esta documentação foram feitos com apoio do Claude e revisados pela autora do projeto. O modelo usado dentro do app é o Qwen2.5-0.5B-Instruct.

@@ -81,4 +81,4 @@ if base.empty:
     st.info("Sem organizações estaduais cadastradas.")
 else:
     st.bar_chart(base.groupby(["UF", "Tipo"]).size().unstack(fill_value=0))
-    st.caption("Quantidade de organizações por estado e tipo (exclui as de atuação nacional).")
+

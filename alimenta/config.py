@@ -25,11 +25,13 @@ COLUNAS_ORGANIZACOES = ["Nome", "Tipo", "UF", "Como ajudar", "Site"]
 COLUNAS_PONTOS = ["Nome", "Tipo", "UF", "Site", "lat", "lon"]
 COLUNAS_NOTICIAS = ["UF", "Título", "Fonte", "Data", "Link"]
 COLUNAS_MUNICIPIOS_UF = ["UF", "Municípios"]
+COLUNAS_RESUMOS = ["UF", "Estilo", "Resumo", "Modelo", "Notícias", "Gerado em", "Tempo (s)"]
 
 ARQ_ORGANIZACOES = "organizacoes_alimenta_mais.csv"
 ARQ_PONTOS = "pontos_alimenta_mais.csv"
 ARQ_NOTICIAS = "noticias.csv"
 ARQ_MUNICIPIOS_UF = "municipios_por_uf.csv"
+ARQ_RESUMOS = "resumos_alimenta_mais.csv"
 
 
 def pasta_dados() -> Path:

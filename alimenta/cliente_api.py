@@ -17,6 +17,10 @@ _PONTOS = {"nome": "Nome", "tipo": "Tipo", "uf": "UF", "site": "Site", "lat": "l
 _NOTICIAS = {"uf": "UF", "titulo": "Título", "fonte": "Fonte", "data": "Data", "link": "Link"}
 _MUNICIPIOS = {"municipio": "Município", "mesorregiao": "Mesorregião", "microrregiao": "Microrregião"}
 _COLUNAS_MUNICIPIOS = ["Município", "Mesorregião", "Microrregião"]
+_RESUMOS = {
+    "uf": "UF", "estilo": "Estilo", "resumo": "Resumo", "modelo": "Modelo",
+    "noticias_usadas": "Notícias", "gerado_em": "Gerado em", "tempo_segundos": "Tempo (s)",
+}
 
 
 class ApiIndisponivel(Exception):
@@ -134,6 +138,20 @@ def carregar_modelo() -> dict:
     return _chamar("POST", "/modelo/carregar", timeout=900)
 
 
-def processar_texto(texto: str, tarefa: str = "resumo", pergunta: str | None = None, max_novos_tokens: int = 150) -> dict:
-    corpo = {"texto": texto, "tarefa": tarefa, "pergunta": pergunta, "max_novos_tokens": max_novos_tokens}
+def processar_texto(texto: str, tarefa: str = "resumo", pergunta: str | None = None, max_novos_tokens: int = 150,
+                    estilo: str = "padrao") -> dict:
+    corpo = {"texto": texto, "tarefa": tarefa, "pergunta": pergunta, "max_novos_tokens": max_novos_tokens, "estilo": estilo}
     return _chamar("POST", "/processar_texto", json=corpo, timeout=900)
+
+
+# --------------------------------------------------------------------- resumos
+def gerar_resumo(uf: str, estilo: str = "padrao") -> dict:
+    """A API junta as notícias do estado, pede o resumo ao modelo e guarda o resultado."""
+    return _chamar("POST", "/resumos/gerar", json={"uf": uf, "estilo": estilo}, timeout=900)
+
+
+def resumos(uf: str | None = None, limite: int = 100) -> pd.DataFrame:
+    params = {"limite": limite}
+    if uf:
+        params["uf"] = uf
+    return _tabela(_chamar("GET", "/resumos", params=params), _RESUMOS, config.COLUNAS_RESUMOS)

@@ -7,6 +7,7 @@ import asyncio
 import logging
 import os
 import time
+from datetime import datetime
 from typing import Literal
 
 import requests
@@ -18,11 +19,12 @@ from alimenta import coleta, config, dados, llm_local, llm_prep
 app = FastAPI(
     title="API Alimenta+",
     description="Consulta e cadastro de organizações de doação e centrais de excedente de alimentos.",
-    version="1.2.0",
+    version="1.3.0",
 )
 
 Tipo = Literal["Doação", "Excedente"]
 Tarefa = Literal["resumo", "pergunta_resposta"]
+Estilo = Literal["padrao", "gestor", "topicos"]
 
 logger = logging.getLogger("alimenta.api")
 
@@ -177,6 +179,7 @@ class EntradaTexto(BaseModel):
                        examples=["- Banco de alimentos recebe 20 toneladas de doações\n- Feira reduz desperdício"])
     tarefa: Tarefa = Field(default="resumo", description="'resumo' ou 'pergunta_resposta'.")
     pergunta: str | None = Field(default=None, max_length=300, description="Obrigatória na tarefa 'pergunta_resposta'.")
+    estilo: Estilo = Field(default="padrao", description="Jeito do resumo: 'padrao', 'gestor' ou 'topicos' (só em 'resumo').")
     max_novos_tokens: int = Field(default=150, ge=20, le=300, description="Tamanho máximo da resposta.")
 
     @model_validator(mode="after")
@@ -190,6 +193,7 @@ class ResultadoTexto(BaseModel):
     tipo_analise: Tarefa = Field(description="Tarefa realizada pelo modelo.")
     texto_processado: str = Field(description="Texto que foi enviado ao modelo.")
     pergunta: str | None = Field(default=None, description="Pergunta feita (só em 'pergunta_resposta').")
+    estilo: Estilo | None = Field(default=None, description="Estilo do resumo (só em 'resumo').")
     resultado: str = Field(description="Resposta gerada pelo modelo.")
     modelo: str = Field(description="Nome do modelo usado.")
     tempo_segundos: float = Field(description="Tempo gasto para gerar a resposta.")
@@ -228,14 +232,12 @@ async def carregar_modelo() -> dict:
     return llm_local.status()
 
 
-@app.post("/processar_texto", response_model=ResultadoTexto, tags=["LLM"], responses=ERROS_LLM,
-          summary="Resume um texto ou responde uma pergunta usando o modelo local")
-async def processar_texto(entrada: EntradaTexto) -> dict:
-    mensagens = llm_prep.mensagens(entrada.tarefa, entrada.texto, entrada.pergunta)
+async def _executar_llm(mensagens: list[dict], max_novos_tokens: int) -> tuple[str, float]:
+    """Roda o modelo local e traduz cada tipo de falha em um erro HTTP claro."""
     inicio = time.perf_counter()
     try:
         resposta = await asyncio.wait_for(
-            asyncio.to_thread(llm_local.gerar, mensagens, entrada.max_novos_tokens), timeout=TIMEOUT_LLM
+            asyncio.to_thread(llm_local.gerar, mensagens, max_novos_tokens), timeout=TIMEOUT_LLM
         )
     except llm_local.ModeloIndisponivel as erro:
         raise HTTPException(status_code=503, detail=str(erro)) from erro
@@ -250,12 +252,84 @@ async def processar_texto(entrada: EntradaTexto) -> dict:
 
     if not resposta.strip():
         raise HTTPException(status_code=502, detail="O modelo não devolveu nenhuma resposta. Tente reformular o texto.")
+    return resposta.strip(), round(time.perf_counter() - inicio, 2)
 
+
+@app.post("/processar_texto", response_model=ResultadoTexto, tags=["LLM"], responses=ERROS_LLM,
+          summary="Resume um texto ou responde uma pergunta usando o modelo local")
+async def processar_texto(entrada: EntradaTexto) -> dict:
+    mensagens = llm_prep.mensagens(entrada.tarefa, entrada.texto, entrada.pergunta, entrada.estilo)
+    resposta, tempo = await _executar_llm(mensagens, entrada.max_novos_tokens)
     return {
         "tipo_analise": entrada.tarefa,
         "texto_processado": entrada.texto,
         "pergunta": entrada.pergunta,
-        "resultado": resposta.strip(),
+        "estilo": entrada.estilo if entrada.tarefa == "resumo" else None,
+        "resultado": resposta,
         "modelo": llm_local.nome_modelo(),
-        "tempo_segundos": round(time.perf_counter() - inicio, 2),
+        "tempo_segundos": tempo,
     }
+
+
+# ===================================================== Resumos das notícias (TP5)
+class PedidoResumo(BaseModel):
+    uf: str = Field(examples=["AM"], description="Sigla do estado cujas notícias serão resumidas.")
+    estilo: Estilo = Field(default="padrao", description="'padrao', 'gestor' (para o gestor público) ou 'topicos'.")
+    limite_noticias: int = Field(default=12, ge=3, le=30, description="Quantas notícias (as mais recentes salvas) entram no resumo.")
+
+    @field_validator("uf")
+    @classmethod
+    def validar_estado(cls, valor: str) -> str:
+        uf = dados.normalizar_uf(valor)
+        if uf == config.NACIONAL:
+            raise ValueError("Informe a sigla de um estado.")
+        return uf
+
+
+class ResumoGerado(BaseModel):
+    uf: str
+    estilo: Estilo
+    resumo: str
+    modelo: str
+    noticias_usadas: int = Field(description="Quantas notícias foram enviadas ao modelo.")
+    gerado_em: str = Field(description="Data e hora em que o resumo foi gerado.")
+    tempo_segundos: float
+
+
+@app.post("/resumos/gerar", response_model=ResumoGerado, status_code=status.HTTP_201_CREATED, tags=["Resumos"],
+          responses={404: {"model": ErroResposta, "description": "Não há notícias salvas para o estado."}, **ERROS_LLM},
+          summary="Resume as notícias salvas de um estado com o modelo local e guarda o resultado")
+async def gerar_resumo(pedido: PedidoResumo) -> dict:
+    noticias = dados.carregar_noticias(uf=pedido.uf, limite=pedido.limite_noticias)
+    if noticias.empty:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Não há notícias salvas para {pedido.uf}. Colete antes (POST /noticias/coletar).",
+        )
+    texto = "\n".join(f"- {titulo}" for titulo in noticias["Título"])
+    mensagens = llm_prep.mensagens("resumo", texto, estilo=pedido.estilo)
+    resposta, tempo = await _executar_llm(mensagens, 200)
+
+    registro = {
+        "uf": pedido.uf,
+        "estilo": pedido.estilo,
+        "resumo": resposta,
+        "modelo": llm_local.nome_modelo(),
+        "noticias_usadas": len(noticias),
+        "gerado_em": datetime.now().isoformat(timespec="seconds"),
+        "tempo_segundos": tempo,
+    }
+    dados.salvar_resumo(
+        uf=registro["uf"], estilo=registro["estilo"], resumo=registro["resumo"], modelo=registro["modelo"],
+        noticias=registro["noticias_usadas"], gerado_em=registro["gerado_em"], tempo=registro["tempo_segundos"],
+    )
+    return registro
+
+
+@app.get("/resumos", response_model=list[ResumoGerado], tags=["Resumos"], summary="Lista os resumos já gerados (mais novos primeiro)")
+def listar_resumos(uf: str | None = None, limite: int = Query(default=50, ge=1, le=500)) -> list[dict]:
+    uf = _validar_uf_estado(uf) if uf else None
+    df = dados.carregar_resumos(uf=uf, limite=limite)
+    df = df.rename(columns={"UF": "uf", "Estilo": "estilo", "Resumo": "resumo", "Modelo": "modelo",
+                            "Notícias": "noticias_usadas", "Gerado em": "gerado_em", "Tempo (s)": "tempo_segundos"})
+    return df.to_dict(orient="records")

@@ -23,7 +23,8 @@ navegacao = st.navigation(
         st.Page("pages/2_Mapa.py", title="Mapa", icon="🗺️"),
         st.Page("pages/3_Noticias.py", title="Notícias", icon="📰"),
         st.Page("pages/4_Dados_IBGE.py", title="Dados IBGE", icon="📊"),
-        st.Page("pages/5_API_e_LLM.py", title="API e LLM", icon="🤖"),
+        st.Page("pages/5_API_e_LLM.py", title="Assistente com IA", icon="🤖"),
+        st.Page("pages/6_Painel.py", title="Painel", icon="📈"),
     ]
 )
 navegacao.run()
